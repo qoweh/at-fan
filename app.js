@@ -1,7 +1,6 @@
 const CHAT_THRESHOLD = 100000;
 const SERVICE_FEE_RATE = 0.1;
 const REQUIRED_CHAT_REPLIES = 3;
-const HOME_REPO = "https://github.com/qoweh/at-fan.git";
 
 const tiers = {
   coffee: 5000,
@@ -15,6 +14,14 @@ const tierLabels = {
   meal: "식사",
   chat: "채팅",
   meet: "만남",
+};
+
+const defaultChats = {
+  woni: [
+    { role: "artist", text: "후원 고마워요. 이번 데모는 가장 먼저 보내드릴게요." },
+    { role: "fan", text: "새 EP도 계속 응원할게요." },
+    { role: "artist", text: "다음 라이브 편곡도 곧 공유하겠습니다." },
+  ],
 };
 
 const storyboard = {
@@ -66,6 +73,16 @@ const storyboard = {
       ["예치", "PG 예치금으로 보관된 후원금이 프로필에 누적됩니다."],
       ["정산", "수락·완료된 후원은 수수료 차감 후 정산 가능액에 반영됩니다."],
       ["환불/취소", "미수령 자동 환불과 리워드 취소 요청을 별도 상태로 표시합니다."],
+    ],
+  },
+  ops: {
+    eyebrow: "Storyboard 06",
+    title: "출시 전 법무·정산·인프라 게이트를 통과한다",
+    body: "지금은 프로토타입이므로 버튼만 열어두고, 실제 배포 전에는 백엔드·PG·사업자·세무·개인정보·인스타 API 검토가 완료되어야 합니다.",
+    steps: [
+      ["서비스 구조", "정적 MVP와 동적 운영 서버의 경계를 결정합니다."],
+      ["권리·규제", "인스타 ID, 아티스트 명칭, 후원금 예치, 환불 정책을 검토합니다."],
+      ["홈서버 배포", "Portainer Stack과 Nginx Proxy Manager 앞단 프록시 구조로 운영합니다."],
     ],
   },
 };
@@ -223,13 +240,7 @@ const state = {
   donations: loadDonations(),
   notifications: loadNotifications(),
   chatDraft: "",
-  chats: {
-    woni: [
-      { role: "artist", text: "후원 고마워요. 이번 데모는 가장 먼저 보내드릴게요." },
-      { role: "fan", text: "새 EP도 계속 응원할게요." },
-      { role: "artist", text: "다음 라이브 편곡도 곧 공유하겠습니다." },
-    ],
-  },
+  chats: loadChats(),
 };
 
 const els = {
@@ -312,6 +323,39 @@ function saveNotifications() {
   }
 }
 
+function cloneDefaultChats() {
+  return Object.fromEntries(
+    Object.entries(defaultChats).map(([creatorId, messages]) => [
+      creatorId,
+      messages.map((message) => ({ ...message })),
+    ]),
+  );
+}
+
+function loadChats() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("atfan-chats") || "null");
+    if (saved && typeof saved === "object" && !Array.isArray(saved)) {
+      return {
+        ...cloneDefaultChats(),
+        ...saved,
+      };
+    }
+  } catch {
+    return cloneDefaultChats();
+  }
+
+  return cloneDefaultChats();
+}
+
+function saveChats() {
+  try {
+    localStorage.setItem("atfan-chats", JSON.stringify(state.chats));
+  } catch {
+    // Chat is still usable in-memory if localStorage is unavailable.
+  }
+}
+
 function createId() {
   if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -358,29 +402,44 @@ function currentFanDonation(creatorId) {
   return donations[donations.length - 1] || null;
 }
 
-function hasBackerAccess(creatorId) {
-  const donation = currentFanDonation(creatorId);
-  return Boolean(donation && ["accepted", "completed"].includes(donation.status));
+function latestDonationWhere(creatorId, predicate) {
+  const donations = creatorDonations(creatorId).filter(predicate);
+  return donations[donations.length - 1] || null;
 }
 
-function hasChatAccess(creatorId) {
-  const donation = currentFanDonation(creatorId);
-  return Boolean(
-    donation &&
+function currentBackerDonation(creatorId) {
+  return latestDonationWhere(creatorId, (donation) =>
+    ["accepted", "completed"].includes(donation.status),
+  );
+}
+
+function currentChatDonation(creatorId) {
+  return latestDonationWhere(
+    creatorId,
+    (donation) =>
       ["accepted", "completed"].includes(donation.status) &&
       donation.amount >= CHAT_THRESHOLD,
   );
 }
 
+function hasBackerAccess(creatorId) {
+  return Boolean(currentBackerDonation(creatorId));
+}
+
+function hasChatAccess(creatorId) {
+  return Boolean(currentChatDonation(creatorId));
+}
+
 function getChatProgress(creatorId) {
   const messages = state.chats[creatorId] || [];
-  const artistReplies = messages.filter((message) => message.role === "artist").length;
-  const percent = Math.min(100, Math.round((artistReplies / REQUIRED_CHAT_REPLIES) * 100));
+  const rawArtistReplies = messages.filter((message) => message.role === "artist").length;
+  const artistReplies = Math.min(rawArtistReplies, REQUIRED_CHAT_REPLIES);
+  const percent = Math.min(100, Math.round((rawArtistReplies / REQUIRED_CHAT_REPLIES) * 100));
 
   return {
     artistReplies,
     percent,
-    done: artistReplies >= REQUIRED_CHAT_REPLIES,
+    done: rawArtistReplies >= REQUIRED_CHAT_REPLIES,
   };
 }
 
@@ -433,6 +492,29 @@ function renderStoryPanel(creator) {
   const donation = currentFanDonation(creator.id);
   const chatProgress = getChatProgress(creator.id);
   const totals = creatorTotals(creator);
+  const opsActions =
+    state.story === "ops"
+      ? `
+        <div class="action-grid">
+          <article class="action-card">
+            <strong>출시 전 게이트</strong>
+            <p>아래 항목은 프로토타입 버튼입니다. 실제 운영 전 담당 전문가 검토와 계약이 필요합니다.</p>
+            <div class="inline-actions">
+              <button type="button" data-compliance-action="backend">동적 서버</button>
+              <button type="button" data-compliance-action="instagram">인스타 ID</button>
+              <button type="button" data-compliance-action="pg">PG/예치</button>
+              <button type="button" data-compliance-action="tax">세금/정산</button>
+              <button type="button" data-compliance-action="business">사업자/약관</button>
+              <button type="button" data-compliance-action="home-server">홈서버</button>
+            </div>
+          </article>
+          <article class="notice-card">
+            <strong>현재 결정</strong>
+            <p>배포 전까지 실제 결제, 실제 인스타 조회, 실제 아티스트 사칭 가능 화면은 비활성으로 두는 것이 안전합니다.</p>
+          </article>
+        </div>
+      `
+      : "";
 
   els.storyPanel.innerHTML = `
     <div class="story-header">
@@ -472,6 +554,7 @@ function renderStoryPanel(creator) {
         <p>아티스트 응답 ${chatProgress.artistReplies}/${REQUIRED_CHAT_REPLIES}회</p>
       </article>
     </div>
+    ${opsActions}
   `;
 }
 
@@ -666,7 +749,7 @@ function renderChat(creator) {
     { role: "artist", text: "후원 고마워요. 메시지로 먼저 인사드려요." },
   ];
   const progress = getChatProgress(creator.id);
-  const donation = currentFanDonation(creator.id);
+  const donation = currentChatDonation(creator.id);
   const quickActions =
     state.mode === "artist"
       ? `
@@ -792,10 +875,12 @@ function renderSupportActions(creator, donation) {
 }
 
 function renderArtistQueue() {
-  const queue = state.donations.filter((donation) =>
-    ["pending", "cancelRequested"].includes(donation.status),
-  );
   const creator = selectedCreator();
+  const queue = state.donations.filter(
+    (donation) =>
+      donation.creatorId === creator.id &&
+      ["pending", "cancelRequested"].includes(donation.status),
+  );
   const hasClaimTask = !creator.claimed;
   els.artistQueue.hidden = state.mode !== "artist";
 
@@ -986,7 +1071,7 @@ function openInstagramProfile() {
       <div class="timeline-list">
         <div class="timeline-item">
           <strong>후원장 상태</strong>
-          <small>${formatKRW(totals.total)} 누적 · ${totals.backers}명 후원 · repo source: ${HOME_REPO}</small>
+          <small>${formatKRW(totals.total)} 누적 · ${totals.backers}명 후원 · MVP에서는 실제 인스타 데이터 없이 팬 입력 ID와 후원 상태만 표시합니다.</small>
         </div>
         <div class="timeline-item">
           <strong>인스타 DM 연결</strong>
@@ -1111,6 +1196,88 @@ function reserveDmNotification(message) {
   showToast(`${creator.handle} DM 알림이 예약되었습니다.`);
 }
 
+function openComplianceDialog(kind) {
+  const details = {
+    backend: {
+      eyebrow: "Architecture Gate",
+      title: "동적 서버 필요 여부",
+      items: [
+        ["현재", "정적 MVP는 화면 검증과 피칭용으로 충분합니다."],
+        ["필요", "실제 회원, 결제, 채팅, 웹훅, 정산, 신고/차단, 감사로그가 들어가면 백엔드가 필요합니다."],
+        ["보류", "지금은 결제/인스타/정산을 실제 연결하지 않고 버튼과 상태만 유지합니다."],
+      ],
+    },
+    instagram: {
+      eyebrow: "Identity Gate",
+      title: "인스타 ID 기반 페이지 생성",
+      items: [
+        ["위험", "공개 ID라도 개인정보·식별표지·사칭·명예훼손·플랫폼 약관 이슈가 생길 수 있습니다."],
+        ["MVP 안전장치", "미수령 계정에는 비공식/수령 대기 표시, 신고 버튼, 삭제 요청, 아티스트 인증 전 정산 차단이 필요합니다."],
+        ["실서비스", "Meta 공식 API와 권한 범위, 사용자 동의, 데이터 보관 정책을 분리 검토해야 합니다."],
+      ],
+    },
+    pg: {
+      eyebrow: "Payment Gate",
+      title: "PG/예치/정산",
+      items: [
+        ["핵심", "플랫폼이 대가 정산을 대행하거나 매개하면 PG 등록 또는 등록 PG/플랫폼 정산 서비스 활용 검토가 필요합니다."],
+        ["안전한 방향", "초기에는 등록 PG사의 결제·에스크로·파트너 정산 기능을 활용하고 회사가 임의로 고객 돈을 보관하지 않습니다."],
+        ["출시 전", "환불, 정산기한, 미정산자금 보호, 이상거래 모니터링을 약관과 운영정책에 명시합니다."],
+      ],
+    },
+    tax: {
+      eyebrow: "Tax Gate",
+      title: "세금/정산",
+      items: [
+        ["사업자", "사업 개시 전 또는 개시 후 20일 이내 사업자등록 검토가 필요합니다."],
+        ["수수료", "플랫폼 수수료 매출, 부가세, PG 수수료, 정산 지급명세를 회계상 분리합니다."],
+        ["아티스트", "개인/개인사업자/법인 여부에 따라 원천징수·세금계산서·지급명세서 처리가 달라집니다."],
+      ],
+    },
+    business: {
+      eyebrow: "Commerce Gate",
+      title: "사업자/약관/소비자 보호",
+      items: [
+        ["사업 형태", "개인사업자로 시작 가능하더라도 결제·정산 리스크와 투자/계약을 고려하면 법인 전환 시점을 정해야 합니다."],
+        ["신고", "온라인으로 소비자와 거래하면 통신판매업 신고, 약관, 개인정보처리방침, 환불정책이 필요할 수 있습니다."],
+        ["콘텐츠", "후원 리워드가 대가성인지, 기부인지, 콘텐츠 구매인지에 따라 표시와 환불 정책을 다르게 설계해야 합니다."],
+      ],
+    },
+    "home-server": {
+      eyebrow: "Deploy Gate",
+      title: "Ubuntu 22 LTS / Intel / Portainer / NPM",
+      items: [
+        ["권장", "앱 컨테이너는 내부 포트만 열고, 외부 HTTPS/도메인은 Nginx Proxy Manager가 담당합니다."],
+        ["Portainer", "compose 파일은 Stack으로 관리하고 GitHub repo를 원본 소스로 둡니다."],
+        ["주의", "실제 결제/개인정보가 들어가면 홈서버 운영은 백업, 접근통제, 로그보존, 장애대응 기준이 필요합니다."],
+      ],
+    },
+  };
+  const selected = details[kind] || details.backend;
+
+  openDetailDialog({
+    eyebrow: selected.eyebrow,
+    title: selected.title,
+    body: `
+      <div class="timeline-list">
+        ${selected.items
+          .map(
+            ([title, body]) => `
+              <div class="timeline-item">
+                <strong>${title}</strong>
+                <small>${body}</small>
+              </div>
+            `,
+          )
+          .join("")}
+      </div>
+      <div class="inline-actions">
+        <button class="text-action" type="button" data-detail-action="settlement-doc">문서 기준으로 검토</button>
+      </div>
+    `,
+  });
+}
+
 function handleDonationSubmit(event) {
   event.preventDefault();
   const creator = selectedCreator();
@@ -1191,6 +1358,13 @@ function handleSupportAction(action) {
   }
 
   if (action === "complete") {
+    if (donation.amount >= CHAT_THRESHOLD) {
+      const progress = getChatProgress(creator.id);
+      if (!progress.done) {
+        showToast(`아티스트 응답 ${REQUIRED_CHAT_REPLIES}회가 필요합니다.`);
+        return;
+      }
+    }
     donation.status = "completed";
     saveDonations();
     showToast("리워드를 완료 처리했습니다.");
@@ -1211,11 +1385,12 @@ function appendChatMessage(role, text) {
     text,
     createdAt: new Date().toISOString(),
   });
+  saveChats();
 }
 
 function handleChatAction(action) {
   const creator = selectedCreator();
-  const donation = currentFanDonation(creator.id);
+  const donation = currentChatDonation(creator.id);
 
   if (!hasChatAccess(creator.id)) {
     showToast("채팅 리워드가 아직 열리지 않았습니다.");
@@ -1356,6 +1531,12 @@ els.storyNav.addEventListener("click", (event) => {
 });
 
 els.storyPanel.addEventListener("click", (event) => {
+  const complianceButton = event.target.closest("[data-compliance-action]");
+  if (complianceButton) {
+    openComplianceDialog(complianceButton.dataset.complianceAction);
+    return;
+  }
+
   const button = event.target.closest("[data-quick-action]");
   if (!button) {
     return;
@@ -1445,6 +1626,9 @@ els.detailBody.addEventListener("click", async (event) => {
     } catch {
       showToast(`프로필 링크: ${link}`);
     }
+  }
+  if (action === "settlement-doc") {
+    showToast("docs/LEGAL_AND_OPERATIONS.md 문서에 검토 항목을 정리했습니다.");
   }
 });
 

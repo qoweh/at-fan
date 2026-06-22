@@ -6,32 +6,59 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: at-fan-home-server
+  cancel-in-progress: true
+
+env:
+  APP_PARENT: /home/pilt/service/apps
+  APP_DIR: /home/pilt/service/apps/at-fan
+  REPO_URL: https://github.com/${{ github.repository }}.git
+  BRANCH: main
+
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    name: Deploy on qoweh self-hosted runner
+    # If there are multiple self-hosted runners, add the server-specific label here.
+    runs-on: self-hosted
     steps:
-      - name: Deploy over SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.HOME_SERVER_HOST }}
-          username: ${{ secrets.HOME_SERVER_USER }}
-          key: ${{ secrets.HOME_SERVER_SSH_KEY }}
-          port: ${{ secrets.HOME_SERVER_SSH_PORT || 22 }}
-          script: |
-            set -eu
-            APP_DIR="${{ secrets.HOME_SERVER_APP_DIR }}"
-            if [ -z "$APP_DIR" ]; then
-              APP_DIR="$HOME/apps/at-fan"
-            fi
-            REPO_URL="https://github.com/qoweh/at-fan.git"
-            BRANCH="main"
+      - name: Check server tools
+        run: |
+          set -eu
+          hostname
+          git --version
+          docker --version
+          docker compose version
 
-            if [ ! -d "$APP_DIR/.git" ]; then
-              mkdir -p "$(dirname "$APP_DIR")"
-              git clone --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
-            fi
+      - name: Clone or update source
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          mkdir -p "$APP_PARENT"
+          GIT_AUTH_HEADER="AUTHORIZATION: bearer $GITHUB_TOKEN"
 
-            cd "$APP_DIR"
-            git checkout "$BRANCH"
-            git pull --ff-only origin "$BRANCH"
-            docker compose up -d --build
+          if [ -e "$APP_DIR" ] && [ ! -d "$APP_DIR/.git" ]; then
+            echo "$APP_DIR exists but is not a git repository."
+            exit 1
+          fi
+
+          if [ ! -d "$APP_DIR/.git" ]; then
+            git -c http.extraheader="$GIT_AUTH_HEADER" clone --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
+          fi
+
+          cd "$APP_DIR"
+          git remote set-url origin "$REPO_URL"
+          git -c http.extraheader="$GIT_AUTH_HEADER" fetch origin "$BRANCH"
+          git checkout "$BRANCH"
+          git -c http.extraheader="$GIT_AUTH_HEADER" pull --ff-only origin "$BRANCH"
+
+      - name: Deploy compose stack
+        run: |
+          set -eu
+          cd "$APP_DIR"
+          docker compose up -d --build
+          docker compose ps
