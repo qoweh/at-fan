@@ -1,5 +1,5 @@
 # This repo does not own the qoweh-server self-hosted runner.
-# It asks qoweh/home-server to deploy, and that repo's existing runner does the work.
+# It asks qoweh/home-server to run its deploy workflow.
 name: Request Home Server Deploy
 
 on:
@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: at-fan-home-server-dispatch
+  group: at-fan-home-server-workflow-dispatch
   cancel-in-progress: true
 
 jobs:
@@ -21,28 +21,24 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Dispatch deploy-at-fan event
+      - name: Dispatch home-server workflow
         env:
           HOME_SERVER_DISPATCH_TOKEN: ${{ secrets.HOME_SERVER_DISPATCH_TOKEN }}
           TARGET_REPO: qoweh/home-server
-          EVENT_TYPE: deploy-at-fan
+          TARGET_WORKFLOW: at-fan-deploy.yml
+          TARGET_REF: main
         run: |
           set -euo pipefail
 
           if [ -z "${HOME_SERVER_DISPATCH_TOKEN}" ]; then
             echo "HOME_SERVER_DISPATCH_TOKEN secret is required."
-            echo "Create a fine-grained GitHub token with write access to qoweh/home-server contents."
+            echo "Create a fine-grained GitHub token with write access to qoweh/home-server actions."
             exit 1
           fi
 
           cat > payload.json <<EOF
           {
-            "event_type": "${EVENT_TYPE}",
-            "client_payload": {
-              "source_repo": "${GITHUB_REPOSITORY}",
-              "source_ref": "${GITHUB_REF_NAME}",
-              "source_sha": "${GITHUB_SHA}"
-            }
+            "ref": "${TARGET_REF}"
           }
           EOF
 
@@ -51,5 +47,5 @@ jobs:
             --header "Accept: application/vnd.github+json" \
             --header "Authorization: Bearer ${HOME_SERVER_DISPATCH_TOKEN}" \
             --header "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${TARGET_REPO}/dispatches" \
+            "https://api.github.com/repos/${TARGET_REPO}/actions/workflows/${TARGET_WORKFLOW}/dispatches" \
             --data @payload.json

@@ -20,11 +20,10 @@ python3 -m http.server 4173
 
 ```sh
 docker network create proxy
-cp .env.example .env
 docker compose up -d --build
 ```
 
-컨테이너는 외부 Docker network인 `proxy`에 붙습니다. 기본 포트는 `18080`입니다. 변경하려면 `.env`에서 `AT_FAN_PORT`를 수정합니다.
+컨테이너는 외부 Docker network인 `proxy`에 붙고, 같은 네트워크의 reverse proxy가 `at-fan-web:80`으로 접근합니다. 호스트 포트는 직접 공개하지 않습니다.
 
 ## 운영 문서
 
