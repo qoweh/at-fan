@@ -33,9 +33,16 @@ APP_DIR="$HOME/service/apps/at-fan" sh scripts/deploy-home-server.sh
 
 ## GitHub Actions 배포
 
-`main`에 push되면 `.github/workflows/deploy-home-server.yml`이 홈서버의 GitHub self-hosted runner에서 실행됩니다. runner가 `/home/pilt/service/apps/at-fan`에 repo를 clone하거나 `git pull --ff-only`로 갱신한 뒤 `docker compose up -d --build`를 실행합니다. workflow 안에서는 `GITHUB_TOKEN`으로 현재 repo를 읽기 때문에 별도 SSH secret은 필요 없습니다.
+현재 홈서버의 기존 runner는 `qoweh/home-server` repo에 붙어 있습니다. 따라서 `qoweh/at-fan` repo의 workflow가 그 runner를 직접 사용할 수 없습니다.
 
-기존 runner가 GitHub repo 설정에 등록되어 있고 online이면 새 runner를 추가할 필요가 없습니다. runner가 여러 대라면 workflow의 `runs-on`에 서버 전용 label을 추가하세요.
+권장 배포 방식은 SSH 접속이 아니라 `qoweh/at-fan` repo의 workflow가 `qoweh/home-server` repo에 `repository_dispatch` 이벤트를 보내고, `qoweh/home-server` repo의 기존 self-hosted runner가 `/home/pilt/service/apps/at-fan`을 갱신한 뒤 `docker compose`를 실행하는 것입니다.
+
+필요한 설정:
+
+- `qoweh/at-fan` repo secret: `HOME_SERVER_DISPATCH_TOKEN`
+- `qoweh/home-server` repo workflow: `.github/workflows/at-fan-deploy.yml`
+
+`HOME_SERVER_DISPATCH_TOKEN`은 `qoweh/home-server` repo에 `repository_dispatch`를 만들 수 있는 GitHub token입니다. 예시는 [홈서버 배포 메모](docs/HOME_SERVER_DEPLOYMENT.md)에 정리했습니다.
 
 기본 배포 경로:
 
@@ -49,7 +56,7 @@ APP_DIR="$HOME/service/apps/at-fan" sh scripts/deploy-home-server.sh
 - runner 실행 계정의 `/home/pilt/service/apps` 쓰기 권한
 - runner 실행 계정의 Docker 실행 권한
 
-서버에서 `scripts/deploy-home-server.sh`를 직접 실행할 때 repo가 private이면 홈서버에 deploy key 또는 GitHub token 기반 clone 권한이 필요합니다.
+`qoweh/at-fan` repo가 private이면 홈서버 runner 실행 계정에 `git@github.com:qoweh/at-fan.git` clone 권한이 필요합니다.
 
 ## 운영 문서
 

@@ -230,6 +230,9 @@ const creators = [
   },
 ];
 
+creators.unshift(...loadCustomCreators());
+applyCreatorOverrides();
+
 const state = {
   selectedId: "woni",
   mode: "fan",
@@ -320,6 +323,73 @@ function saveNotifications() {
     localStorage.setItem("atfan-notifications", JSON.stringify(state.notifications));
   } catch {
     // The notification log is non-critical demo state.
+  }
+}
+
+function loadCustomCreators() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("atfan-custom-creators") || "[]");
+    if (Array.isArray(saved)) {
+      return saved
+        .filter((creator) => creator && typeof creator.id === "string")
+        .map((creator) => ({
+          ...creator,
+          transient: true,
+        }));
+    }
+  } catch {
+    return [];
+  }
+
+  return [];
+}
+
+function saveCustomCreators() {
+  try {
+    const customCreators = creators.filter((creator) => creator.transient);
+    localStorage.setItem("atfan-custom-creators", JSON.stringify(customCreators));
+  } catch {
+    // Custom creator persistence is best-effort in the static prototype.
+  }
+}
+
+function loadCreatorOverrides() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("atfan-creator-overrides") || "{}");
+    if (saved && typeof saved === "object" && !Array.isArray(saved)) {
+      return saved;
+    }
+  } catch {
+    return {};
+  }
+
+  return {};
+}
+
+function applyCreatorOverrides() {
+  const overrides = loadCreatorOverrides();
+  creators.forEach((creator) => {
+    if (overrides[creator.id]) {
+      Object.assign(creator, overrides[creator.id]);
+    }
+  });
+}
+
+function saveCreatorOverrides() {
+  try {
+    const overrides = Object.fromEntries(
+      creators.map((creator) => [
+        creator.id,
+        {
+          claimed: creator.claimed,
+          verified: creator.verified,
+          bio: creator.bio,
+        },
+      ]),
+    );
+    localStorage.setItem("atfan-creator-overrides", JSON.stringify(overrides));
+  } catch {
+    // The server-backed product will own this state later.
   }
 }
 
@@ -1035,6 +1105,7 @@ function addPreviewCreator(value) {
   }
 
   creators.unshift(preview);
+  saveCustomCreators();
   return preview;
 }
 
@@ -1315,6 +1386,7 @@ function handleSupportAction(action) {
 
   if (action === "claim") {
     creator.claimed = true;
+    creator.verified = true;
     creator.bio = `${creator.name} 계정이 본인 인증을 마치고 후원금을 수령할 수 있는 상태입니다.`;
     creatorDonations(creator.id).forEach((item) => {
       if (item.status === "pending") {
@@ -1322,6 +1394,8 @@ function handleSupportAction(action) {
       }
     });
     saveDonations();
+    saveCreatorOverrides();
+    saveCustomCreators();
     showToast(`${creator.name} 계정을 수령 처리했습니다.`);
     render();
     return;

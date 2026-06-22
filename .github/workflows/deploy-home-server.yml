@@ -1,4 +1,6 @@
-name: Deploy Home Server
+# This repo does not own the qoweh-server self-hosted runner.
+# It asks qoweh/home-server to deploy, and that repo's existing runner does the work.
+name: Request Home Server Deploy
 
 on:
   push:
@@ -10,55 +12,44 @@ permissions:
   contents: read
 
 concurrency:
-  group: at-fan-home-server
+  group: at-fan-home-server-dispatch
   cancel-in-progress: true
 
-env:
-  APP_PARENT: /home/pilt/service/apps
-  APP_DIR: /home/pilt/service/apps/at-fan
-  REPO_URL: https://github.com/${{ github.repository }}.git
-  BRANCH: main
-
 jobs:
-  deploy:
-    name: Deploy on qoweh self-hosted runner
-    # If there are multiple self-hosted runners, add the server-specific label here.
-    runs-on: self-hosted
+  request-deploy:
+    name: Request qoweh/home-server deploy
+    runs-on: ubuntu-latest
+
     steps:
-      - name: Check server tools
-        run: |
-          set -eu
-          hostname
-          git --version
-          docker --version
-          docker compose version
-
-      - name: Clone or update source
+      - name: Dispatch deploy-at-fan event
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          HOME_SERVER_DISPATCH_TOKEN: ${{ secrets.HOME_SERVER_DISPATCH_TOKEN }}
+          TARGET_REPO: qoweh/home-server
+          EVENT_TYPE: deploy-at-fan
         run: |
-          set -eu
-          mkdir -p "$APP_PARENT"
-          GIT_AUTH_HEADER="AUTHORIZATION: bearer $GITHUB_TOKEN"
+          set -euo pipefail
 
-          if [ -e "$APP_DIR" ] && [ ! -d "$APP_DIR/.git" ]; then
-            echo "$APP_DIR exists but is not a git repository."
+          if [ -z "${HOME_SERVER_DISPATCH_TOKEN}" ]; then
+            echo "HOME_SERVER_DISPATCH_TOKEN secret is required."
+            echo "Create a fine-grained GitHub token with write access to qoweh/home-server contents."
             exit 1
           fi
 
-          if [ ! -d "$APP_DIR/.git" ]; then
-            git -c http.extraheader="$GIT_AUTH_HEADER" clone --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
-          fi
+          cat > payload.json <<EOF
+          {
+            "event_type": "${EVENT_TYPE}",
+            "client_payload": {
+              "source_repo": "${GITHUB_REPOSITORY}",
+              "source_ref": "${GITHUB_REF_NAME}",
+              "source_sha": "${GITHUB_SHA}"
+            }
+          }
+          EOF
 
-          cd "$APP_DIR"
-          git remote set-url origin "$REPO_URL"
-          git -c http.extraheader="$GIT_AUTH_HEADER" fetch origin "$BRANCH"
-          git checkout "$BRANCH"
-          git -c http.extraheader="$GIT_AUTH_HEADER" pull --ff-only origin "$BRANCH"
-
-      - name: Deploy compose stack
-        run: |
-          set -eu
-          cd "$APP_DIR"
-          docker compose up -d --build
-          docker compose ps
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${HOME_SERVER_DISPATCH_TOKEN}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${TARGET_REPO}/dispatches" \
+            --data @payload.json
