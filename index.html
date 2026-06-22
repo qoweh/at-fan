@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@fan - 선후원 팬덤 플랫폼</title>
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app" data-mode="fan">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="@fan 홈">
+          <span class="brand-mark">@</span>
+          <span>fan</span>
+        </a>
+
+        <form class="search" id="searchForm" autocomplete="off">
+          <span class="search-icon" aria-hidden="true"></span>
+          <input
+            id="creatorSearch"
+            type="search"
+            inputmode="text"
+            placeholder="인스타그램 ID 검색"
+            aria-label="인스타그램 ID 검색"
+          />
+          <button class="icon-button" type="submit" aria-label="검색">
+            <span aria-hidden="true">↵</span>
+          </button>
+          <div class="search-results" id="searchResults" hidden></div>
+        </form>
+
+        <nav class="mode-switch" aria-label="화면 전환">
+          <button class="mode-button active" type="button" data-mode="fan">
+            후원자
+          </button>
+          <button class="mode-button" type="button" data-mode="artist">
+            아티스트
+          </button>
+        </nav>
+
+        <nav class="story-nav" id="storyNav" aria-label="스토리보드">
+          <button class="story-button active" type="button" data-story="home">
+            홈
+          </button>
+          <button class="story-button" type="button" data-story="sponsor">
+            후원
+          </button>
+          <button class="story-button" type="button" data-story="rewards">
+            리워드
+          </button>
+          <button class="story-button" type="button" data-story="artist">
+            아티스트
+          </button>
+          <button class="story-button" type="button" data-story="settlement">
+            정산
+          </button>
+        </nav>
+      </header>
+
+      <main class="workspace">
+        <aside class="sidebar" aria-label="크리에이터 탐색">
+          <section class="sidebar-section">
+            <div class="section-heading">
+              <p class="eyebrow">Spotlight</p>
+              <h2>지금 열린 후원장</h2>
+            </div>
+            <div class="creator-list" id="creatorList"></div>
+          </section>
+
+          <section class="ledger" aria-label="플랫폼 요약">
+            <div>
+              <span class="metric-label">예치 후원금</span>
+              <strong id="escrowTotal">0원</strong>
+            </div>
+            <div>
+              <span class="metric-label">활성 후원자</span>
+              <strong id="backerTotal">0명</strong>
+            </div>
+          </section>
+        </aside>
+
+        <section class="profile-area" aria-live="polite">
+          <section class="story-panel" id="storyPanel"></section>
+
+          <div class="profile-cover">
+            <div class="cover-visual" id="coverVisual"></div>
+            <div class="profile-header">
+              <div class="avatar" id="profileAvatar"></div>
+              <div class="profile-copy">
+                <div class="name-line">
+                  <h1 id="profileName">-</h1>
+                  <span class="status-pill" id="profileStatus">-</span>
+                </div>
+                <p class="handle" id="profileHandle">-</p>
+                <p class="bio" id="profileBio">-</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="action-row">
+            <button class="primary-action" type="button" id="openSponsor">
+              후원 예치
+            </button>
+            <button class="secondary-action" type="button" id="openInstagram">
+              인스타그램
+            </button>
+            <button class="secondary-action" type="button" id="sendDm">
+              DM 알림
+            </button>
+          </div>
+
+          <div class="stats-row" id="statsRow"></div>
+
+          <div class="reward-strip" id="rewardStrip"></div>
+
+          <div class="tabs" role="tablist" aria-label="프로필 콘텐츠">
+            <button class="tab active" type="button" data-tab="feed" role="tab">
+              감사 피드
+            </button>
+            <button class="tab" type="button" data-tab="backer" role="tab">
+              후원자 전용
+            </button>
+            <button class="tab" type="button" data-tab="chat" role="tab">
+              1:1 채팅
+            </button>
+          </div>
+
+          <div class="content-panel" id="contentPanel"></div>
+        </section>
+
+        <aside class="right-rail" aria-label="후원 상태">
+          <section class="tool-panel" id="sponsorSummary"></section>
+          <section class="tool-panel" id="artistQueue"></section>
+          <section class="policy-panel">
+            <div class="section-heading">
+              <p class="eyebrow">Policy</p>
+              <h2>운영 기준</h2>
+            </div>
+            <dl class="policy-list">
+              <div>
+                <dt>플랫폼 수수료</dt>
+                <dd>10%</dd>
+              </div>
+              <div>
+                <dt>미수령 자동 환불</dt>
+                <dd>2개월</dd>
+              </div>
+              <div>
+                <dt>리워드 취소 요청</dt>
+                <dd>수락 후 7일</dd>
+              </div>
+              <div>
+                <dt>채팅 MVP 기준</dt>
+                <dd>100,000원 이상</dd>
+              </div>
+            </dl>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <dialog class="sponsor-dialog" id="sponsorDialog">
+      <form method="dialog" class="dialog-form" id="sponsorForm">
+        <div class="dialog-head">
+          <div>
+            <p class="eyebrow">Virtual Sponsorship</p>
+            <h2 id="dialogTitle">후원 예치</h2>
+          </div>
+          <button class="icon-button close-button" type="button" id="closeDialog" aria-label="닫기">
+            <span aria-hidden="true">×</span>
+          </button>
+        </div>
+
+        <fieldset class="tier-grid">
+          <legend>후원 티어</legend>
+          <label>
+            <input type="radio" name="tier" value="coffee" />
+            <span>커피 5,000원</span>
+          </label>
+          <label>
+            <input type="radio" name="tier" value="meal" />
+            <span>식사 20,000원</span>
+          </label>
+          <label>
+            <input type="radio" name="tier" value="chat" checked />
+            <span>채팅 100,000원</span>
+          </label>
+          <label>
+            <input type="radio" name="tier" value="meet" />
+            <span>만남 500,000원</span>
+          </label>
+        </fieldset>
+
+        <label class="field-label" for="amountRange">
+          직접 후원금
+          <strong id="amountText">100,000원</strong>
+        </label>
+        <input
+          id="amountRange"
+          class="amount-range"
+          type="range"
+          min="1000"
+          max="1000000"
+          step="1000"
+          value="100000"
+        />
+
+        <label class="field-label" for="supporterName">후원자 이름</label>
+        <input id="supporterName" class="text-field" type="text" value="Anonymous Fan" />
+
+        <label class="field-label" for="supportMessage">공개 응원 메시지</label>
+        <textarea id="supportMessage" class="text-field" rows="3">새 활동도 계속 응원할게요.</textarea>
+
+        <div class="settlement-preview" id="settlementPreview"></div>
+
+        <button class="submit-action" type="submit">후원금 예치</button>
+      </form>
+    </dialog>
+
+    <dialog class="detail-dialog" id="detailDialog">
+      <div class="detail-shell">
+        <div class="dialog-head">
+          <div>
+            <p class="eyebrow" id="detailEyebrow">Detail</p>
+            <h2 id="detailTitle">상세</h2>
+          </div>
+          <button class="icon-button close-button" type="button" id="closeDetail" aria-label="닫기">
+            <span aria-hidden="true">×</span>
+          </button>
+        </div>
+        <div class="detail-body" id="detailBody"></div>
+      </div>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" hidden></div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

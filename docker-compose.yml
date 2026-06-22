@@ -1,0 +1,9 @@
+services:
+  at-fan:
+    build:
+      context: .
+    container_name: at-fan-web
+    restart: unless-stopped
+    ports:
+      - "${AT_FAN_PORT:-8080}:80"
+
