@@ -6,3 +6,9 @@ services:
     restart: unless-stopped
     ports:
       - "${AT_FAN_PORT:-18080}:80"
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true
